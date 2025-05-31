@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VSCode settings (optional, 如果你们不想提交IDE配置)
+.vscode/
+
+# PyCharm settings (optional)
+.idea/
+
+# Data files
+evtestdata1/
+
+# Output and model files
+checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# PPT or Markdown materials (根据需求，可以不忽略)
+
+# Ignore images
+*.png
+
+# Ignore temporary files
+*.log
+*.tmp
+*.bak
+
+# Ignore test results
+*.tsv
+*.csv
