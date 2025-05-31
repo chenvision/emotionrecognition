@@ -2,17 +2,34 @@
 from __future__ import annotations
 import argparse
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from torch import nn, optim
 from tqdm import tqdm
 from pathlib import Path
+from datetime import datetime
+import matplotlib.pyplot as plt
+import numpy as np
+
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+import io
+from PIL import Image
 
 from data_loader import get_dataloaders
 from utils import compute_metrics, DEVICE
 from model_lstm import BiLSTMClassifier
 from model_textcnn import TextCNNClassifier
+from model_gru import BiGRUClassifier
 
 # ----------------------------------------------------------------------
-
+def plot_attention_map(attention_weights, writer, epoch):
+    # 仅展示前几个样本
+    for i in range(min(3, attention_weights.shape[0])):
+        attn = attention_weights[i].squeeze(-1).cpu().numpy()  # [T]
+        fig, ax = plt.subplots(figsize=(10, 1))
+        ax.imshow(attn[np.newaxis, :], cmap="viridis", aspect="auto")
+        ax.set_title(f"Attention Weights Sample {i}")
+        writer.add_figure(f"Attention/sample_{i}", fig, global_step=epoch)
 def train_one_epoch(model, loader, criterion, optimizer):
     model.train()
     total_loss = 0
@@ -28,7 +45,6 @@ def train_one_epoch(model, loader, criterion, optimizer):
 
 
 @torch.no_grad()
-
 def evaluate(model, loader, criterion):
     model.eval()
     total_loss = 0
@@ -45,7 +61,7 @@ def evaluate(model, loader, criterion):
     metrics = compute_metrics(preds, labels)
     metrics["loss"] = total_loss / len(loader.dataset)
     metrics["attention_weights"] = torch.cat(attention_weights_list, dim=0)
-    return metrics
+    return metrics, labels, preds
 
 
 # ----------------------------------------------------------------------
@@ -53,12 +69,12 @@ def evaluate(model, loader, criterion):
 def main():
     parser = argparse.ArgumentParser(description="Train emotion classifier")
     parser.add_argument("--data_dir", type=str, default="data")
-    parser.add_argument("--model", choices=["lstm", "textcnn"], default="lstm")
+    parser.add_argument("--model", choices=["lstm", "textcnn", "gru"], default="gru")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--patience", type=int, default=999)
     parser.add_argument("--max_len", type=int, default=128)
     parser.add_argument("--save_path", type=str, default="checkpoints")
     args = parser.parse_args()
@@ -67,8 +83,16 @@ def main():
         args.data_dir, args.batch_size, args.max_len
     )
     Path(args.save_path).mkdir(parents=True, exist_ok=True)
-
-    model_cls = BiLSTMClassifier if args.model == "lstm" else TextCNNClassifier
+    log_tag = datetime.now().strftime("%Y%m%d-%H%M%S")
+    writer = SummaryWriter(log_dir=f"runs/{args.model}/{log_tag}")
+    if args.model == "lstm":
+        model_cls = BiLSTMClassifier
+    elif args.model == "textcnn":
+        model_cls = TextCNNClassifier
+    elif args.model == "gru":
+        model_cls = BiGRUClassifier
+    else:
+        raise ValueError('Model must be either "lstm" or "textcnn" or "gru"')
     model = model_cls(len(vocab)).to(DEVICE)
 
     # 计算类别权重以解决类别不平衡问题
@@ -100,7 +124,7 @@ def main():
     
     for epoch in range(1, args.epochs + 1):
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer)
-        val_metrics = evaluate(model, val_loader, criterion)
+        val_metrics, _, _ = evaluate(model, val_loader, criterion)
         
         print(
             f"Epoch {epoch}: train_loss={train_loss:.4f}, val_loss={val_metrics['loss']:.4f}, "
@@ -110,7 +134,14 @@ def main():
         
         # 更新学习率
         scheduler.step(val_metrics['f1'])
-        
+        # 记录可视化节点
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("Loss/val", val_metrics["loss"], epoch)
+        writer.add_scalar("Precision/val", val_metrics["precision"], epoch)
+        writer.add_scalar("Recall/val", val_metrics["recall"], epoch)
+        writer.add_scalar("Accuracy/val", val_metrics["accuracy"], epoch)
+        writer.add_scalar("F1/val", val_metrics["f1"], epoch)
+        writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch)
         if val_metrics["f1"] > best_f1:
             best_f1 = val_metrics["f1"]
             no_improve_count = 0
@@ -127,6 +158,7 @@ def main():
                 },
                 Path(args.save_path) / f"best_{args.model}.pt",
             )
+            plot_attention_map(val_attention, writer, epoch)
         else:
             no_improve_count += 1
             if no_improve_count >= args.patience:
@@ -136,11 +168,41 @@ def main():
     # Final test evaluation
     ckpt = torch.load(Path(args.save_path) / f"best_{args.model}.pt", map_location=DEVICE)
     model.load_state_dict(ckpt["model_state"])
-    test_metrics = evaluate(model, test_loader, criterion)
+    test_metrics, labels, preds = evaluate(model, test_loader, criterion)
     print(
         f"Test – loss: {test_metrics['loss']:.4f}, "
         f"acc: {test_metrics['accuracy']:.4f}, f1: {test_metrics['f1']:.4f}"
     )
+
+    # ---- 分类报告到 TensorBoard ----
+    report_dict = classification_report(labels, preds, target_names=["Negative", "Positive"], output_dict=True)
+    for label in ["Negative", "Positive"]:
+        writer.add_scalar(f"Test/Precision_{label}", report_dict[label]["precision"], 0)
+        writer.add_scalar(f"Test/Recall_{label}", report_dict[label]["recall"], 0)
+        writer.add_scalar(f"Test/F1_{label}", report_dict[label]["f1-score"], 0)
+
+    writer.add_scalar("Test/Accuracy", report_dict["accuracy"], 0)
+    writer.add_scalar("Test/Macro_F1", report_dict["macro avg"]["f1-score"], 0)
+
+    # ---- 混淆矩阵图像写入 TensorBoard ----
+    cm = confusion_matrix(labels, preds)
+    fig, ax = plt.subplots(figsize=(4, 4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negative", "Positive"],
+                yticklabels=["Negative", "Positive"])
+    ax.set_xlabel("Predicted Label")
+    ax.set_ylabel("True Label")
+    ax.set_title("Confusion Matrix")
+
+    # 将图像写入 TensorBoard
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    image = Image.open(buf)
+    image = np.array(image)
+    writer.add_image("Test/Confusion_Matrix", image, 0, dataformats='HWC')
+    buf.close()
+    plt.close(fig)
+    writer.close()
 
 
 if __name__ == "__main__":

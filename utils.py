@@ -3,7 +3,7 @@ import re
 import jieba
 from typing import List
 import torch
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 __all__ = ["tokenize", "compute_metrics", "DEVICE"]
 
@@ -23,7 +23,10 @@ def tokenize(text: str) -> List[str]:
     return text.strip().lower().split()
 
 
-def compute_metrics(preds: List[int], labels: List[int]) -> dict[str, float]:
-    acc = accuracy_score(labels, preds)
-    f1 = f1_score(labels, preds, average="weighted")
-    return {"accuracy": acc, "f1": f1}
+def compute_metrics(preds, labels):
+    return {
+        "accuracy": accuracy_score(labels, preds),
+        "f1": f1_score(labels, preds, average="binary"),
+        "precision": precision_score(labels, preds, average="binary"),
+        "recall": recall_score(labels, preds, average="binary"),
+    }

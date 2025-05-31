@@ -58,7 +58,7 @@ def dump_tsv(path, rows):
 # ---------- 主流程 ---------------------------------------------------- #
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dir", required=True, help="包含 4 个 XML 的文件夹")
+    ap.add_argument("--dir", default='./evtestdata1', help="包含 4 个 XML 的文件夹")
     ap.add_argument("--out_dir", default="data", help="输出 TSV 目录")
     ap.add_argument("--ratio", nargs=3, type=float, default=[0.8, 0.1, 0.1],
                     metavar=("TRAIN","DEV","TEST"),
