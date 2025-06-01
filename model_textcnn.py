@@ -7,13 +7,13 @@ __all__ = ["TextCNNClassifier"]
 
 
 class TextCNNClassifier(nn.Module):
-    def __init__(self, vocab_size: int, embed_dim: int = 128, num_class: int = 2, kernel_sizes=(3, 4, 5), num_channels=100):
+    def __init__(self, vocab_size: int, embed_dim: int = 128, num_class: int = 2, kernel_sizes=(3, 4, 5), num_channels=100, dropout=0.5, num_classes=2):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)# 嵌入层
         self.convs = nn.ModuleList(
             [nn.Conv2d(1, num_channels, (k, embed_dim)) for k in kernel_sizes]
         )# 卷积层
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(num_channels * len(kernel_sizes), num_class)
         # 初始化权重
         self.apply(self._init_weights)

@@ -23,10 +23,10 @@ class SelfAttention(nn.Module):
 
 
 class BiGRUClassifier(nn.Module):
-    def __init__(self, vocab_size: int, embed_dim: int = 128, hidden_dim: int = 128, num_class: int = 2):
+    def __init__(self, vocab_size: int, embed_dim: int = 128, hidden_dim: int = 128, num_class: int = 2, dropout: float = 0.1):
         super().__init__()  # 词表大小，嵌入维度，隐藏维度，类别数
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)  # 嵌入层
-        self.gru = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True)  # 双向GRU
+        self.gru = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True, dropout=dropout)  # 双向GRU
         self.attention = SelfAttention(hidden_dim * 2)  # 自注意力机制
         self.fc = nn.Linear(hidden_dim * 2, num_class)  # 全连接层
         self.dropout = nn.Dropout(0.5)  # dropout层
