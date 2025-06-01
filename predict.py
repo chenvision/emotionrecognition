@@ -11,6 +11,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
 plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
 from utils import tokenize, DEVICE
 from model_lstm import BiLSTMClassifier
+from model_gru import BiGRUClassifier
 from model_textcnn import TextCNNClassifier
 
 
@@ -21,7 +22,12 @@ def load_model(ckpt_path: str):
     args = ckpt_info["args"]
     
     # 创建模型实例
-    model_cls = BiLSTMClassifier if args["model"] == "lstm" else TextCNNClassifier
+    if args["model"] == "lstm":
+        model_cls = BiLSTMClassifier
+    elif args["model"] == "gru":
+        model_cls = BiGRUClassifier
+    else:
+        model_cls = TextCNNClassifier
     model = model_cls(len(vocab)).to(DEVICE)
     
     # 加载模型权重
@@ -46,8 +52,8 @@ def predict(model, vocab, max_len: int, text: str):
     x = encode(text, vocab, max_len).to(DEVICE)
     tokens = tokenize(text)[:max_len]
     
-    # 区分LSTM和TextCNN模型的输出处理
-    if isinstance(model, BiLSTMClassifier):
+    # 区分LSTM/GRU和TextCNN模型的输出处理
+    if isinstance(model, (BiLSTMClassifier, BiGRUClassifier)):
         logits, attention_weights = model(x)
         probs = F.softmax(logits, dim=-1).squeeze().cpu().tolist()
         label = int(torch.argmax(logits))

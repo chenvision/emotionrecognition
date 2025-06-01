@@ -1,0 +1,151 @@
+# 情感分析训练配置文件
+# 包含多种训练策略和超参数组合
+
+# 基础配置
+base:
+  data_dir: "data"
+  batch_size: 32
+  max_len: 128
+  seed: 42
+  save_path: "runs_improved"
+
+# 模型配置
+models:
+  bilstm:
+    embed_dim: 128
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.3
+  
+  bigru:
+    embed_dim: 128
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.3
+  
+  textcnn:
+    embed_dim: 128
+    dropout: 0.3
+
+# 训练策略配置
+training_strategies:
+  # 策略1: 基础训练
+  basic:
+    epochs: 30
+    lr: 0.001
+    weight_decay: 0.0001
+    patience: 8
+    clip_grad: 1.0
+    loss_type: "weighted_ce"
+    use_augmentation: false
+    
+  # 策略2: Focal Loss + 数据增强
+  focal_augment:
+    epochs: 50
+    lr: 0.0005
+    weight_decay: 0.0001
+    patience: 10
+    clip_grad: 1.0
+    loss_type: "focal"
+    focal_alpha: 1.0
+    focal_gamma: 2.0
+    use_augmentation: true
+    augment_prob: 0.3
+    
+  # 策略3: 高学习率 + 早停
+  high_lr:
+    epochs: 100
+    lr: 0.002
+    weight_decay: 0.0005
+    patience: 5
+    clip_grad: 0.5
+    loss_type: "weighted_ce"
+    use_augmentation: false
+    
+  # 策略4: 保守训练
+  conservative:
+    epochs: 80
+    lr: 0.0001
+    weight_decay: 0.00001
+    patience: 15
+    clip_grad: 2.0
+    loss_type: "focal"
+    focal_alpha: 0.5
+    focal_gamma: 1.5
+    use_augmentation: true
+    augment_prob: 0.2
+    
+  # 策略5: 激进训练
+  aggressive:
+    epochs: 40
+    lr: 0.003
+    weight_decay: 0.001
+    patience: 6
+    clip_grad: 0.8
+    loss_type: "focal"
+    focal_alpha: 2.0
+    focal_gamma: 3.0
+    use_augmentation: true
+    augment_prob: 0.5
+
+# 超参数搜索空间
+hyperparameter_search:
+  lr: [0.0001, 0.0005, 0.001, 0.002, 0.003]
+  weight_decay: [0.00001, 0.0001, 0.0005, 0.001]
+  dropout: [0.2, 0.3, 0.4, 0.5]
+  hidden_dim: [32, 64, 128, 256]
+  focal_gamma: [1.0, 1.5, 2.0, 2.5, 3.0]
+  focal_alpha: [0.5, 1.0, 1.5, 2.0]
+  augment_prob: [0.1, 0.2, 0.3, 0.4, 0.5]
+
+# 推荐的训练流程
+recommended_pipeline:
+  # 第一阶段: 数据质量检查
+  stage1_data_check:
+    script: "data_quality_check.py"
+    description: "检查数据质量，识别标签错误"
+    
+  # 第二阶段: 基础模型训练
+  stage2_baseline:
+    script: "train_improved.py"
+    strategy: "basic"
+    models: ["bilstm", "bigru", "textcnn"]
+    description: "训练基础模型，建立性能基准"
+    
+  # 第三阶段: 改进训练
+  stage3_improved:
+    script: "train_improved.py"
+    strategy: "focal_augment"
+    models: ["bilstm", "bigru"]
+    description: "使用Focal Loss和数据增强改进模型"
+    
+  # 第四阶段: 超参数优化
+  stage4_optimization:
+    script: "hyperparameter_search.py"
+    description: "搜索最优超参数组合"
+    
+  # 第五阶段: 模型集成
+  stage5_ensemble:
+    script: "ensemble_models.py"
+    description: "集成多个模型提升性能"
+
+# 评估指标
+evaluation_metrics:
+  primary: "f1"  # 主要优化指标
+  secondary: ["accuracy", "precision", "recall"]
+  
+# 早停配置
+early_stopping:
+  monitor: "val_f1"
+  mode: "max"
+  min_delta: 0.001
+  patience: 10
+  restore_best_weights: true
+
+# 日志配置
+logging:
+  level: "INFO"
+  save_metrics: true
+  plot_curves: true
+  save_confusion_matrix: true
+  tensorboard: false
