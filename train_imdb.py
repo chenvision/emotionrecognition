@@ -52,19 +52,19 @@ def main():
     parser = argparse.ArgumentParser(description="Train BiRNN (LSTM/GRU) for emotion classification")
 
     # 数据路径
-    parser.add_argument("--dataset", choices=["chinese", "imdb"], default="chinese", help="选择数据集：chinese 或 imdb")
+    parser.add_argument("--dataset", choices=["chinese", "imdb"], default="imdb", help="选择数据集：chinese 或 imdb")
     parser.add_argument("--train_path", type=str, default=None)
     parser.add_argument("--val_path", type=str, default=None)
     parser.add_argument("--test_path", type=str, default=None)
 
     # 模型结构参数
-    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="gru")
+    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="lstm")
     parser.add_argument("--embed_dim", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.3)
 
     # 编码器
-    parser.add_argument("--model_name", type=str, default="bert-base-chinese")
+    parser.add_argument("--model_name", type=str, default="bert-base-uncased") # bert-base-uncased
     parser.add_argument("--max_length", type=int, default=64)
 
     # 训练参数
@@ -118,7 +118,7 @@ def main():
             num_class=2,
             dropout=args.dropout,
             num_layers=1,
-            use_attention=False
+            use_attention=True
         )
     elif args.model_type == "gru":
         model = BiGRUClassifier(

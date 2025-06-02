@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-
+import re
 # 1. 读取IMDB CSV文件
 df = pd.read_csv("./IMDB Dataset.csv")  # 确保路径正确
 
@@ -20,6 +20,16 @@ plt.show()
 # 3. 标签映射（positive -> 1, negative -> 0）
 label_map = {"positive": 1, "negative": 0}
 df["label"] = df["sentiment"].map(label_map)
+
+
+# 先清洗评论内容
+def clean_review(text):
+    text = text.lower()
+    text = re.sub(r"<.*?>", " ", text)  # 去除HTML标签
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+df["review"] = df["review"].astype(str).apply(clean_review)
 
 # 4. 检查是否有未识别标签
 print("Unmapped labels:", df["label"].isna().sum())
