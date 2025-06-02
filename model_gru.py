@@ -29,14 +29,15 @@ class BiGRUClassifier(nn.Module):
         self.gru = nn.GRU(embed_dim, hidden_dim, bidirectional=True, batch_first=True, dropout=dropout)  # 双向GRU
         self.attention = SelfAttention(hidden_dim * 2)  # 自注意力机制
         self.fc = nn.Linear(hidden_dim * 2, num_class)  # 全连接层
-        self.dropout = nn.Dropout(0.5)  # dropout层
+        self.dropout = nn.Dropout(dropout)  # dropout层
 
     def forward(self, x):  # x: [B, T]
         emb = self.embedding(x)  # [B, T, E]
         gru_out, _ = self.gru(emb)  # lstm_out: [B, T, 2H]
-        attended, attention_weights = self.attention(gru_out)  # [B, 2H], [B, T, 1]
-        out = self.dropout(attended)
-        return self.fc(out), attention_weights  # logits, attention_weights
+        # attended, attention_weights = self.attention(gru_out)  # [B, 2H], [B, T, 1]
+        pooled = torch.mean(gru_out, dim=1)  # [B, 2H]
+        out = self.dropout(pooled)
+        return self.fc(out), 0#attention_weights  # logits, attention_weights
         # 前向传播
         # 输入：词表大小，嵌入维度，隐藏维度，类别数
         # 输出：logits, attention_weights

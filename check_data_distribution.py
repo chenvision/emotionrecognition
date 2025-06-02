@@ -1,7 +1,7 @@
 import pandas as pd
 
 # 读取训练数据
-df = pd.read_csv('data/train.tsv', sep='\t', header=None, names=['text', 'label'])
+df = pd.read_csv('backup/data/train.tsv', sep='\t', header=None, names=['text', 'label'])
 
 print('训练数据标签分布:')
 print(df['label'].value_counts())

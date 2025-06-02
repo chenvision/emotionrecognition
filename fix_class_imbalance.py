@@ -28,5 +28,5 @@ def compute_class_weights(data_dir):
     return torch.FloatTensor(class_weights)
 
 if __name__ == "__main__":
-    weights = compute_class_weights("data")
+    weights = compute_class_weights("backup/data")
     print(f"\n建议在训练时使用: criterion = nn.CrossEntropyLoss(weight={weights.tolist()})")

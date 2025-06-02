@@ -41,3 +41,5 @@ Thumbs.db
 # Ignore test results
 *.tsv
 *.csv
+*.pt
+

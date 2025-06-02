@@ -62,7 +62,7 @@ def print_sample(dataset: TextSentimentDataset, n=5):
 
 if __name__ == "__main__":
     # 1. 加载训练集
-    dataset = TextSentimentDataset("data/train.tsv", max_len=128)
+    dataset = TextSentimentDataset("backup/data/train.tsv", max_len=128)
 
     # 2. 执行分析函数
     analyze_label_distribution(dataset)
