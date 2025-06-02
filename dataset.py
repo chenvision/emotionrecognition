@@ -1,36 +1,45 @@
 from torch.utils.data import Dataset
 import pandas as pd
 import torch
-from transformers import AutoTokenizer
-
-from torch.utils.data import Dataset
-import pandas as pd
-import torch
 import types
 
 class EmotionDataset(Dataset):
-    def __init__(self, csv_file, tokenizer, max_length=64):
-        self.data = pd.read_csv(csv_file)
+    def __init__(self, data, tokenizer, max_length=64, is_imdb=False):
+        """
+        通用情感分类数据集:
+        - 中文数据: text + label
+        - IMDB数据: review + sentiment (需要映射成label)
+        """
+        self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.is_imdb = is_imdb
 
-        # 标签映射
-        self.label_map = {"positive": 1, "negative": 0}
-        #不在映射中的标签变成-1
-        self.data["label"] = self.data["label"].map(lambda x : self.label_map.get(x,-1))
-        #过滤掉非法标签
-        self.data = self.data[self.data["label"] != -1]
+        if self.is_imdb:
+            # ✅ 1. IMDB数据 sentiment -> label (positive:1, negative:0)
+            self.label_map = {"positive": 1, "negative": 0}
+            self.data["label"] = self.data["sentiment"].map(self.label_map)
+        else:
+            # ✅ 2. 中文情感分类
+            self.label_map = {"positive": 1, "negative": 0}
+            self.data["label"] = self.data["label"].map(lambda x: self.label_map.get(x, -1))
+            # 过滤非法label
+            self.data = self.data[self.data["label"] != -1]
 
-        # 自动判断 tokenizer 类型
-        self.use_hf_style = callable(getattr(tokenizer, "__call__", None))  # HuggingFace
-        self.use_spm_style = isinstance(getattr(tokenizer, "encode", None), types.MethodType)
+        # 判定 tokenizer 风格
+        self.use_hf_style = callable(getattr(tokenizer, "__call__", None))  # HuggingFace tokenizer
+        self.use_spm_style = isinstance(getattr(tokenizer, "encode", None), types.MethodType)  # SentencePiece tokenizer
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        text = self.data.iloc[idx]["text"]
-        label = self.data.iloc[idx]["label"]
+        if self.is_imdb:
+            text = self.data.iloc[idx]["review"]  # ✅ IMDB取'review'
+        else:
+            text = self.data.iloc[idx]["text"]    # ✅ 中文取'text'
+
+        label = self.data.iloc[idx]["label"]      # ✅ label统一是数字 0/1
 
         if self.use_hf_style:
             encoding = self.tokenizer(
@@ -43,7 +52,6 @@ class EmotionDataset(Dataset):
             input_ids = encoding["input_ids"].squeeze(0)
             attention_mask = encoding["attention_mask"].squeeze(0)
         elif self.use_spm_style:
-            # SentencePiece 风格
             ids = self.tokenizer.encode(text, out_type=int)
             ids = ids[:self.max_length]
             pad_id = 0
@@ -59,6 +67,7 @@ class EmotionDataset(Dataset):
             "attention_mask": attention_mask,
             "label": torch.tensor(label, dtype=torch.long)
         }
+
 
 
 def get_tokenizer(model_name="bert-base-chinese"):
