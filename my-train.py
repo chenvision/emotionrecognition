@@ -60,7 +60,7 @@ def main():
 
     # 模型结构参数
     parser.add_argument(
-        "--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="lstm",
+        "--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="gru",
         help="Choose which model to use: lstm | gru | textcnn | bert"
     )
     parser.add_argument("--embed_dim", type=int, default=128)
@@ -95,8 +95,8 @@ def main():
     if args.model_type == "lstm":
         model = BiLSTMClassifier(
             vocab_size=tokenizer.vocab_size,
-            embed_dim=args.embed_dim,
-            hidden_dim=args.hidden_dim,
+            embed_dim=128,
+            hidden_dim=128,
             num_class=2,
             dropout=args.dropout,
             num_layers=1,
@@ -145,6 +145,7 @@ def main():
     val_losses = []
     val_accuracies = []
 
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
@@ -173,7 +174,12 @@ def main():
             correct += (preds == labels).sum().item()
             total += labels.size(0)
 
+            preds = torch.argmax(logits, dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
         avg_train_loss = total_loss / len(train_loader)
+        train_acc = correct / total
         train_acc = correct / total
         train_losses.append(avg_train_loss)
         train_accuracies.append(train_acc)
@@ -225,8 +231,14 @@ def main():
         writer.add_scalar("Metrics/Recall", rec, epoch)
         writer.add_scalar("Metrics/F1", f1, epoch)
 
+
         for name, param in model.named_parameters():
             writer.add_histogram(name, param, epoch)
+
+        print(
+            f"[Epoch {epoch + 1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | P: {prec:.4f} | R: {rec:.4f} | F1: {f1:.4f}")
+
+        model.train()  # 别忘了还原训练状态
 
         print(
             f"[Epoch {epoch + 1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | P: {prec:.4f} | R: {rec:.4f} | F1: {f1:.4f}")

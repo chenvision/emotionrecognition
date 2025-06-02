@@ -42,4 +42,5 @@ Thumbs.db
 *.tsv
 *.csv
 *.pt
+weights/*.pt
 

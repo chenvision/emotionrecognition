@@ -16,8 +16,10 @@ class EmotionDataset(Dataset):
 
         # 标签映射
         self.label_map = {"positive": 1, "negative": 0}
-        self.data = self.data[self.data["label"].isin(self.label_map)]
-        self.data["label"] = self.data["label"].map(self.label_map)
+        #不在映射中的标签变成-1
+        self.data["label"] = self.data["label"].map(lambda x : self.label_map.get(x,-1))
+        #过滤掉非法标签
+        self.data = self.data[self.data["label"] != -1]
 
         # 自动判断 tokenizer 类型
         self.use_hf_style = callable(getattr(tokenizer, "__call__", None))  # HuggingFace
