@@ -2,6 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import re
+import string
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
 # 1. 读取IMDB CSV文件
 df = pd.read_csv("./IMDB Dataset.csv")  # 确保路径正确
 
@@ -23,11 +26,18 @@ df["label"] = df["sentiment"].map(label_map)
 
 
 # 先清洗评论内容
+# def clean_review(text):
+#     text = text.lower()
+#     text = re.sub(r"<.*?>", " ", text)  # 去除HTML标签
+#     text = re.sub(r"\s+", " ", text)
+#     return text.strip()
+
 def clean_review(text):
     text = text.lower()
-    text = re.sub(r"<.*?>", " ", text)  # 去除HTML标签
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    return text
 
 df["review"] = df["review"].astype(str).apply(clean_review)
 

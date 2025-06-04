@@ -58,18 +58,18 @@ def main():
     parser.add_argument("--test_path", type=str, default=None)
 
     # 模型结构参数
-    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="lstm")
+    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="gru")
     parser.add_argument("--embed_dim", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.3)
 
     # 编码器
     parser.add_argument("--model_name", type=str, default="bert-base-uncased") # bert-base-uncased
-    parser.add_argument("--max_length", type=int, default=64)
+    parser.add_argument("--max_length", type=int, default=640)
 
     # 训练参数
-    parser.add_argument("--epochs", type=int, default=6)
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--save_path", type=str, default="./weights/model_rnn.pt")
 
