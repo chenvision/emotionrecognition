@@ -1,6 +1,20 @@
-import argparse
+import re
+import string
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+
 import torch
 from torch import nn
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from torch.nn.functional import binary_cross_entropy_with_logits
+import argparse
+import torch
+
 from torch.utils.data import DataLoader
 import pandas as pd
 from transformers import AutoTokenizer
@@ -13,7 +27,15 @@ from model_lstm import BiLSTMClassifier
 from model_textcnn import TextCNNClassifier
 from model_bert import BertClassifier
 from model_bagging import BaggingEnsemble
-from torch.utils.tensorboard import SummaryWriter
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from tqdm import tqdm
+from collections import Counter
+from itertools import chain
+
+nltk.download('punkt')
+nltk.download('stopwords')
 
 def evaluate(model, dataloader, criterion, device, show_report=False):
     model.eval()
@@ -21,8 +43,8 @@ def evaluate(model, dataloader, criterion, device, show_report=False):
     total_loss = 0
     with torch.no_grad():
         for batch in dataloader:
-            input_ids = batch["input_ids"].to(device)
-            labels = batch["label"].to(device)
+            input_ids = batch[0].to(device)
+            labels = batch[1].to(device)
             outputs, _ = model(input_ids)
             loss = criterion(outputs, labels)
             preds = outputs.argmax(dim=1)
@@ -58,14 +80,14 @@ def main():
     parser.add_argument("--test_path", type=str, default=None)
 
     # 模型结构参数
-    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="gru")
-    parser.add_argument("--embed_dim", type=int, default=128)
+    parser.add_argument("--model_type", type=str, choices=["lstm", "gru", "textcnn", "bert", "bagging"], default="textcnn")
+    parser.add_argument("--embed_dim", type=int, default=256)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--dropout", type=float, default=0.3)
 
     # 编码器
     parser.add_argument("--model_name", type=str, default="bert-base-uncased") # bert-base-uncased
-    parser.add_argument("--max_length", type=int, default=640)
+    parser.add_argument("--max_length", type=int, default=512)
 
     # 训练参数
     parser.add_argument("--epochs", type=int, default=5)
@@ -76,53 +98,92 @@ def main():
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    # 读取数据
+    df = pd.read_csv('IMDB Dataset.csv')
+    df.drop_duplicates(inplace=True)
 
-    # 根据数据集选择加载方式
-    if args.dataset == "chinese":
-        train_path = args.train_path or "./data/emotion_train.csv"
-        val_path = args.val_path or "./data/emotion_val.csv"
-        test_path = args.test_path or "./data/emotion_test.csv"
+    # 文本清洗与分词
+    def clean_text(text):
+        text = text.lower()
+        text = re.sub(r'<.*?>', '', text)
+        text = re.sub(r'https?://\S+|www\.\S+', '', text)
+        text = text.translate(str.maketrans('', '', string.punctuation))
+        tokens = word_tokenize(text)
+        stop_words = set(stopwords.words('english'))
+        tokens = [word for word in tokens if word not in stop_words]
+        return tokens
 
-        train_df = pd.read_csv(train_path)
-        val_df = pd.read_csv(val_path)
-        test_df = pd.read_csv(test_path)
+    df['tokens'] = df['review'].apply(clean_text)
+    df['label'] = df['sentiment'].map({'negative': 0, 'positive': 1})
 
-        train_dataset = EmotionDataset(train_df, tokenizer, args.max_length, is_imdb=False)
-        val_dataset = EmotionDataset(val_df, tokenizer, args.max_length, is_imdb=False)
-        test_dataset = EmotionDataset(test_df, tokenizer, args.max_length, is_imdb=False)
+    # 构建词汇表（不使用 torchtext）
+    all_tokens = list(chain.from_iterable(df['tokens']))
+    word_counts = Counter(all_tokens)
+    word2idx = {word: idx + 2 for idx, (word, _) in enumerate(word_counts.items())}
+    word2idx['<PAD>'] = 0
+    word2idx['<UNK>'] = 1
 
-    elif args.dataset == "imdb":
-        train_path = args.train_path or "./data/imdb_train.csv"
-        val_path = args.val_path or "./data/imdb_val.csv"
-        test_path = args.test_path or "./data/imdb_test.csv"
+    # 编码为索引
+    def encode_tokens(tokens):
+        return [word2idx.get(token, word2idx['<UNK>']) for token in tokens]
 
-        train_df = pd.read_csv(train_path)
-        val_df = pd.read_csv(val_path)
-        test_df = pd.read_csv(test_path)
+    df['input_ids'] = df['tokens'].apply(encode_tokens)
 
-        train_dataset = EmotionDataset(train_df, tokenizer, args.max_length, is_imdb=True)
-        val_dataset = EmotionDataset(val_df, tokenizer, args.max_length, is_imdb=True)
-        test_dataset = EmotionDataset(test_df, tokenizer, args.max_length, is_imdb=True)
+    # 划分数据集
+    # X_train, X_test, y_train, y_test = train_test_split(df['input_ids'], df['label'], test_size=0.2, random_state=42)
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size)
+    # 第一步：先划分出临时训练集和测试集（90%训练 + 10%测试）
+    train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+        df['input_ids'], df['label'], test_size=0.1, random_state=42, stratify=df['label']
+    )
 
+    # 第二步：再从训练集中划出验证集（从90%中划出10%，即0.1 / 0.9 ≈ 11.1%）
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_val_texts, train_val_labels, test_size=1 / 9, random_state=42, stratify=train_val_labels
+    )
+
+    # PyTorch Dataset 和 DataLoader
+    class IMDBDataset(Dataset):
+        def __init__(self, sequences, labels):
+            self.sequences = sequences
+            self.labels = labels
+
+        def __len__(self):
+            return len(self.sequences)
+
+        def __getitem__(self, idx):
+            return torch.tensor(self.sequences[idx], dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.long)
+
+    def collate_batch(batch):
+        text_list, label_list = zip(*batch)
+        padded = pad_sequence(text_list, batch_first=True, padding_value=word2idx['<PAD>'])
+        labels = torch.tensor(label_list, dtype=torch.long)  # 👈 转为 Long 且保持 1D
+        return padded[:, :args.max_length], labels
+
+    # 构造 Dataset
+    train_dataset = IMDBDataset(train_texts.tolist(), train_labels.tolist())
+    val_dataset = IMDBDataset(val_texts.tolist(), val_labels.tolist())
+    test_dataset = IMDBDataset(test_texts.tolist(), test_labels.tolist())
+
+    # 构造 DataLoader
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_batch)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, collate_fn=collate_batch)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=collate_batch)
+    vocab_size = len(word2idx)
     # 模型选择
     if args.model_type == "lstm":
         model = BiLSTMClassifier(
-            vocab_size=tokenizer.vocab_size,
+            vocab_size=vocab_size,
             embed_dim=args.embed_dim,
             hidden_dim=args.hidden_dim,
             num_class=2,
             dropout=args.dropout,
             num_layers=1,
-            use_attention=True
+            use_attention=False
         )
     elif args.model_type == "gru":
         model = BiGRUClassifier(
-            vocab_size=tokenizer.vocab_size,
+            vocab_size=vocab_size,
             embed_dim=args.embed_dim,
             hidden_dim=args.hidden_dim,
             num_class=2,
@@ -130,19 +191,17 @@ def main():
         )
     elif args.model_type == "textcnn":
         model = TextCNNClassifier(
-            vocab_size=tokenizer.vocab_size,
+            vocab_size=vocab_size,
             embed_dim=args.embed_dim,
             num_class=2,
             dropout=args.dropout
         )
-    elif args.model_type == "bert":
-        model = BertClassifier(model_name=args.model_name, num_class=2)
     elif args.model_type == "bagging":
         model = BaggingEnsemble(
             base_model_cls=BiLSTMClassifier,
             num_models=5,
             model_args={
-                "vocab_size": tokenizer.vocab_size,
+                "vocab_size": vocab_size,
                 "embed_dim": args.embed_dim,
                 "hidden_dim": args.hidden_dim,
                 "num_class": 2,
@@ -170,14 +229,11 @@ def main():
         total = 0
 
         for batch in train_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["label"].to(device)
+            input_ids = batch[0].to(device)
+            # attention_mask = batch["attention_mask"].to(device)
+            labels = batch[1].to(device)
 
-            if args.model_type == "bert":
-                logits = model(input_ids=input_ids, attention_mask=attention_mask)
-            else:
-                logits, _ = model(input_ids)
+            logits, _ = model(input_ids)
 
             loss = criterion(logits, labels)
 
